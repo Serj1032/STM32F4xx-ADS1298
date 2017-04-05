@@ -33,16 +33,28 @@ int32_t Temperature;
 int32_t Pressure;
 int32_t Humidity;
 
+int32_t meteo[3];
+
 // -------- Functions -----------------
 
 void BME_SendData(){
 	if(!verbose){
-		USB_Print("DTT");
-		USB_Send4Byte((uint8_t*)&Temperature);
-		USB_Print("DTP");
-		USB_Send4Byte((uint8_t*)&Pressure);
-		USB_Print("DTH");
-		USB_Send4Byte((uint8_t*)&Humidity);
+		if(HAL_GPIO_ReadPin(GPIOA,GPIO_PIN_9) == GPIO_PIN_SET){
+			USB_Print("DTT");
+			USB_Send4Byte((uint8_t*)&Temperature);
+			USB_Print("DTP");
+			USB_Send4Byte((uint8_t*)&Pressure);
+			USB_Print("DTH");
+			USB_Send4Byte((uint8_t*)&Humidity);
+		}
+		else{
+			USART_Send("DTT");
+			USART_Send4Byte((uint8_t*)&Temperature);
+			USART_Send("DTP");
+			USART_Send4Byte((uint8_t*)&Pressure);
+			USART_Send("DTH");
+			USART_Send4Byte((uint8_t*)&Humidity);
+		}
 	}else
 			HAL_Delay(500);
 }
@@ -347,3 +359,13 @@ uint32_t BME280_CalcH(int32_t UH) {
 	return (uint32_t)(vx1 >> 12);
 }
 
+
+int32_t* getMeteo(){
+
+	meteo[0] = Temperature;
+	meteo[1] = Pressure;
+	meteo[2] = Humidity;
+	
+	return meteo;
+}
+	

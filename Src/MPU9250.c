@@ -6,6 +6,8 @@ int16_t Az;
 
 uint8_t acc[6];
 
+int32_t Accel[3];
+
 void MPU_Init(){
 	
 	if(verbose){
@@ -31,12 +33,22 @@ void MPU_Init(){
 
 void MPU_SendData(){
 	if(!verbose){
-		USB_Print("DTX");
-		USB_Send2Byte((uint8_t*)&Ax);
-		USB_Print("DTY");
-		USB_Send2Byte((uint8_t*)&Ay);
-		USB_Print("DTZ");
-		USB_Send2Byte((uint8_t*)&Az);
+		if(HAL_GPIO_ReadPin(GPIOA,GPIO_PIN_9) == GPIO_PIN_SET){
+			USB_Print("DTX");
+			USB_Send2Byte((uint8_t*)&Ax);
+			USB_Print("DTY");
+			USB_Send2Byte((uint8_t*)&Ay);
+			USB_Print("DTZ");
+			USB_Send2Byte((uint8_t*)&Az);
+		}
+		else{
+			USART_Send("DTX");
+			USART_Send2Byte((uint8_t*)&Ax);
+			USART_Send("DTY");
+			USART_Send2Byte((uint8_t*)&Ay);
+			USART_Send("DTZ");
+			USART_Send2Byte((uint8_t*)&Az);
+		}
 	}
 	else 
 		HAL_Delay(500);
@@ -126,4 +138,11 @@ void MPU_printRegisterName(uint8_t _address){
 		}
 }
 
+int32_t* getAccel(){
 
+	Accel[0] = Ax;
+	Accel[1] = Ay;
+	Accel[2] = Az;
+	
+	return Accel;
+}

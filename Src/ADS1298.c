@@ -4,6 +4,7 @@
 
 
 /*------------------------------- VARIABLES -----------------------------*/
+bool intDRDY = false; // Flag to ready data from ADS1298
 
 bool isDaisy = false;		// does this have a daisy chain board?
 
@@ -30,64 +31,8 @@ void ADS_Init(){
 	
 	ADS_getDeviceID();
 	HAL_Delay(1000);
-	
-	// Test signal
-	ADS_WREG(CONFIG1,0x06);  
-	HAL_Delay(100);
-	ADS_WREG(CONFIG2,0x17);  
-	HAL_Delay(100);
-	ADS_WREG(CONFIG3,0xDC);  
-	HAL_Delay(100);
-	
-	ADS_WREG(LOFF,0x03);  
-	HAL_Delay(10);
-	
-	ADS_WREG(CH1SET,0x05);  
-	HAL_Delay(10);
-	ADS_WREG(CH2SET,0x05);  
-	HAL_Delay(10);
-	ADS_WREG(CH3SET,0x05);  
-	HAL_Delay(10);
-	ADS_WREG(CH4SET,0x05);  
-	HAL_Delay(10);
-	ADS_WREG(CH5SET,0x05);  
-	HAL_Delay(10);
-	ADS_WREG(CH6SET,0x05);  
-	HAL_Delay(10);
-	ADS_WREG(CH7SET,0x05);  
-	HAL_Delay(10);
-	ADS_WREG(CH8SET,0x05);  
-	HAL_Delay(10);
-	
-	ADS_WREG(BIAS_SENSP,0x00);  
-	HAL_Delay(10);
-	ADS_WREG(BIAS_SENSN,0x00);  
-	HAL_Delay(10);
-	
-	ADS_WREG(LOFF_SENSP,0xFF);  
-	HAL_Delay(10);
-	ADS_WREG(LOFF_SENSN,0x02);  
-	HAL_Delay(10);
-	
-	ADS_WREG(LOFF_FLIP,0x00);  
-	HAL_Delay(10);
-	
-	
-	ADS_WREG(LOFF_STATP,0xFF);  
-	HAL_Delay(10);
-	ADS_WREG(LOFF_STATN,0x06);  
-	HAL_Delay(10);
-	
-	ADS_WREG(GPIO,0x00);  
-	HAL_Delay(10);
-	
-	ADS_WREG(MISC1,0x00);  
-	HAL_Delay(10);
-	ADS_WREG(MISC2,0xF0);  
-	HAL_Delay(10);
-	
-	// end test signal
-	/* //Work settings
+
+	//Work settings
 	ADS_WREG(CONFIG1,0x06);  
 	HAL_Delay(100);
 	ADS_WREG(CONFIG2,0x10);  
@@ -106,13 +51,13 @@ void ADS_Init(){
 	HAL_Delay(10);
 	ADS_WREG(CH4SET,0x50);  
 	HAL_Delay(10);
-	ADS_WREG(CH5SET,0x50);  
+	ADS_WREG(CH5SET,0x55);  
 	HAL_Delay(10);
-	ADS_WREG(CH6SET,0x50);  
+	ADS_WREG(CH6SET,0x55);  
 	HAL_Delay(10);
-	ADS_WREG(CH7SET,0x50);  
+	ADS_WREG(CH7SET,0x65);  
 	HAL_Delay(10);
-	ADS_WREG(CH8SET,0x50);  
+	ADS_WREG(CH8SET,0x65);  
 	HAL_Delay(10);
 	
 	ADS_WREG(BIAS_SENSP,0x00);  
@@ -150,17 +95,17 @@ void ADS_Init(){
 	
 	ADS_WREG(0x19,0xE3);  
 	HAL_Delay(10);
-	*/
+	
 
 	ADS_RREGS(0,17);
 	HAL_Delay(1000);
 	
-	
-	ADS_RDATAC();            // enter Read Data Continuous mode
-	HAL_Delay(100);
-		
 	ADS_START();
 	HAL_Delay(100);
+/*
+	ADS_RDATAC();            // enter Read Data Continuous mode
+	HAL_Delay(100);
+*/
 	
 	
 	if(verbose){
@@ -529,15 +474,12 @@ void ADS_sendUSBData(void){
 	if(!verbose){
 		USB_Print("DT0");
 		USB_Send4Byte((uint8_t*)&channelData[0]);
-				
 		USB_Print("DT1");
 		USB_Send4Byte((uint8_t*)&channelData[1]);
-		
 		USB_Print("DT2");
 		USB_Send4Byte((uint8_t*)&channelData[2]);
 		USB_Print("DT3");
 		USB_Send4Byte((uint8_t*)&channelData[3]);
-		
 		USB_Print("DT4");
 		USB_Send4Byte((uint8_t*)&channelData[4]);
 		USB_Print("DT5");
@@ -555,6 +497,33 @@ void ADS_sendUSBData(void){
 	//USB_SendNumber(0x66223344);
 }
 	
+void ADS_sendUARTData(void){
 	
+	USART_Send("DT0");
+	USART_Send4Byte((uint8_t*)&channelData[0]);
+	USART_Send("DT1");
+	USART_Send4Byte((uint8_t*)&channelData[1]);
+	USART_Send("DT2");
+	USART_Send4Byte((uint8_t*)&channelData[2]);
+	USART_Send("DT3");
+	USART_Send4Byte((uint8_t*)&channelData[3]);
+	USART_Send("DT4");
+	USART_Send4Byte((uint8_t*)&channelData[4]);
+	USART_Send("DT5");
+	USART_Send4Byte((uint8_t*)&channelData[5]);
+	USART_Send("DT6");
+	USART_Send4Byte((uint8_t*)&channelData[6]);
+	USART_Send("DT7");
+	USART_Send4Byte((uint8_t*)&channelData[7]);
+}
+	
+void ADS_SendData(){
+	if(HAL_GPIO_ReadPin(GPIOA,GPIO_PIN_9) == GPIO_PIN_SET)
+		ADS_sendUSBData();
+	else
+		ADS_sendUARTData();
+}
 
-
+int32_t* getChannelData(){
+	return channelData;
+}

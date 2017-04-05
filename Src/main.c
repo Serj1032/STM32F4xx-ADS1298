@@ -49,11 +49,15 @@
 /* USER CODE BEGIN Includes */
 
 #include "usbd_cdc_if.h" 
+
 #include "ADS1298.h"
 #include "MPU9250.h"
 #include "BME280.h"
-#include "stdbool.h"
+//#include "esp8266.h"
 #include "microSD.h"
+
+#include "stdbool.h"
+
 
 /************************/
 // usbd_cdc.h
@@ -77,8 +81,9 @@ UART_HandleTypeDef huart3;
 
 bool verbose = false;		// turn on/off Serial feedback
 
-volatile bool intDRDY = false;
 bool startAcq = false;
+
+volatile uint32_t timerPowerDown = 0;
 
 /* USER CODE END PV */
 
@@ -99,6 +104,11 @@ void USB_Print(unsigned char* s);
 void USB_SendBits(uint8_t b);
 void USB_SendNumber(int32_t num);
 
+void USART_Send(uint8_t* cmd);
+void USART_Send2Byte(uint8_t* fb); 
+void USART_Send4Byte(uint8_t* fb); 
+
+void USB_SendByte( uint8_t* fb);
 void USB_Send2Byte(uint8_t* fb);
 void USB_Send3Byte(uint8_t* fb);
 void USB_Send4Byte(uint8_t* fb);
@@ -144,30 +154,32 @@ int main(void)
 	
 	
 	ADS_Init();
-  MPU_Init();
+	MPU_Init();
 	BME_Init();
-	
-	
-	//ADS_START();
-	
-	
-	//testSDCard();	
 
+	//SD_Init();
+
+	
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  while (1)
+	//HAL_UART_Receive_IT(&huart3, &ansESP,1);
+	
+	while (1)
   {
   /* USER CODE END WHILE */
 
   /* USER CODE BEGIN 3 */
 		
+		 // ------- Next for work mode ---------
 		if(startAcq){
 			startAcq = false;
 			
 			MPU_ReadAcc(); // Read Ax Ay Az from MPU9250
 			BME_readData();
+			
+			//writeSD();
 			
 			BME_SendData();
 			MPU_SendData();
@@ -175,13 +187,12 @@ int main(void)
 		
 			
 		if(intDRDY){
-			
-			//startAcq = true;
+			startAcq = true;
 			intDRDY = false;
-			ADS_updateChannelData();
-			//ADS_RDATA();
-			ADS_sendUSBData();
-			
+			//ADS_updateChannelData();
+			ADS_RDATA();
+			ADS_SendData();
+			ADS_START();
 		}	
 		
   }
@@ -276,7 +287,7 @@ static void MX_SDIO_SD_Init(void)
   hsd.Init.ClockPowerSave = SDIO_CLOCK_POWER_SAVE_DISABLE;
   hsd.Init.BusWide = SDIO_BUS_WIDE_1B;
   hsd.Init.HardwareFlowControl = SDIO_HARDWARE_FLOW_CONTROL_DISABLE;
-  hsd.Init.ClockDiv = 12;
+  hsd.Init.ClockDiv = 13;
 
 }
 
@@ -291,7 +302,7 @@ static void MX_SPI1_Init(void)
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi1.Init.CLKPhase = SPI_PHASE_2EDGE;
   hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -314,7 +325,7 @@ static void MX_SPI3_Init(void)
   hspi3.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi3.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi3.Init.NSS = SPI_NSS_SOFT;
-  hspi3.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_64;
+  hspi3.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
   hspi3.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi3.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi3.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -331,7 +342,7 @@ static void MX_USART3_UART_Init(void)
 {
 
   huart3.Instance = USART3;
-  huart3.Init.BaudRate = 115200;
+  huart3.Init.BaudRate = 460800;
   huart3.Init.WordLength = UART_WORDLENGTH_8B;
   huart3.Init.StopBits = UART_STOPBITS_1;
   huart3.Init.Parity = UART_PARITY_NONE;
@@ -375,9 +386,8 @@ static void MX_GPIO_Init(void)
 
   /*Configure GPIO pin : ADS_DRDY_Pin */
   GPIO_InitStruct.Pin = ADS_DRDY_Pin;
-  //GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-	GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
   HAL_GPIO_Init(ADS_DRDY_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : ADS_CS_Pin MPU_CS_Pin */
@@ -389,7 +399,7 @@ static void MX_GPIO_Init(void)
 
   /*Configure GPIO pin : PW_KEY_Pin */
   GPIO_InitStruct.Pin = PW_KEY_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(PW_KEY_GPIO_Port, &GPIO_InitStruct);
 
@@ -430,14 +440,19 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+//======== USB =======
 void USB_Print(unsigned char* s){
 	uint8_t* ptr = s;
 	int i = 0;
 	while(*s++)
 		i++;
-	
+	/*
 	if(HAL_GPIO_ReadPin(GPIOA,GPIO_PIN_9) == GPIO_PIN_SET )
 		while( CDC_Transmit_FS(ptr,i) == USBD_BUSY);
+	*/
+	
+	while( (HAL_GPIO_ReadPin(GPIOA,GPIO_PIN_9) == GPIO_PIN_SET) && (CDC_Transmit_FS(ptr,i) == USBD_BUSY));
 }
 
 void USB_SendBits(uint8_t b){
@@ -454,9 +469,8 @@ void USB_SendBits(uint8_t b){
 			buf[7-_i] = 48;
 	}
 	
-	if(HAL_GPIO_ReadPin(GPIOA,GPIO_PIN_9) == GPIO_PIN_SET )
-		while( CDC_Transmit_FS(buf,8) == USBD_BUSY);
-	
+	while( (HAL_GPIO_ReadPin(GPIOA,GPIO_PIN_9) == GPIO_PIN_SET) && (CDC_Transmit_FS(buf,8) == USBD_BUSY));
+
 }
 
 void USB_SendNumber(int32_t x){
@@ -470,36 +484,29 @@ void USB_SendNumber(int32_t x){
   } while(x);
   
 	for(k = i - 1; k >= 0; k--){
-		if(HAL_GPIO_ReadPin(GPIOA,GPIO_PIN_9) == GPIO_PIN_SET ){
-			while( CDC_Transmit_FS(&value[k],1) == USBD_BUSY);
-		}
+		while( (HAL_GPIO_ReadPin(GPIOA,GPIO_PIN_9) == GPIO_PIN_SET) && (CDC_Transmit_FS(&value[k],1) == USBD_BUSY));
 	}
-	/*
-  while(i) //send data
-  {
-    USART_SendData(USART1, value[--i]); 
-		while(USART_GetFlagStatus(USART1,USART_FLAG_TC) == RESET){}; 
-  }
-	*/
+}
+
+
+void USB_SendByte(uint8_t* fb){
+	while( (HAL_GPIO_ReadPin(GPIOA,GPIO_PIN_9) == GPIO_PIN_SET) && (CDC_Transmit_FS(fb,sizeof(int8_t)) == USBD_BUSY));
 }
 
 void USB_Send2Byte(uint8_t* fb){
-	if(HAL_GPIO_ReadPin(GPIOA,GPIO_PIN_9) == GPIO_PIN_SET )
-		while( CDC_Transmit_FS(fb,2*sizeof(int8_t)) == USBD_BUSY);
+	while( (HAL_GPIO_ReadPin(GPIOA,GPIO_PIN_9) == GPIO_PIN_SET) && (CDC_Transmit_FS(fb,2*sizeof(int8_t)) == USBD_BUSY));
 }
 	
 	
 void USB_Send3Byte(uint8_t* fb){
-	if(HAL_GPIO_ReadPin(GPIOA,GPIO_PIN_9) == GPIO_PIN_SET )
-		while( CDC_Transmit_FS(fb,3*sizeof(int8_t)) == USBD_BUSY);
+	while( (HAL_GPIO_ReadPin(GPIOA,GPIO_PIN_9) == GPIO_PIN_SET) && (CDC_Transmit_FS(fb,3*sizeof(int8_t)) == USBD_BUSY));
 }
 
 void USB_Send4Byte(uint8_t* fb){
-	if(HAL_GPIO_ReadPin(GPIOA,GPIO_PIN_9) == GPIO_PIN_SET){
-		while( CDC_Transmit_FS(fb,sizeof(int32_t)) == USBD_BUSY);
-	}
+		while( (HAL_GPIO_ReadPin(GPIOA,GPIO_PIN_9) == GPIO_PIN_SET) && (CDC_Transmit_FS(fb,sizeof(int32_t)) == USBD_BUSY));
 }
 
+//======== SPI =======
 uint8_t transferMPU(uint8_t send){
 	uint8_t rx = 0x00;
 	
@@ -507,7 +514,6 @@ uint8_t transferMPU(uint8_t send){
 	
 	return rx;
 }
-
 
 uint8_t transferSPI(uint8_t send){
 	uint8_t rx = 0x00;
@@ -517,16 +523,62 @@ uint8_t transferSPI(uint8_t send){
 	return rx;
 }
 
+//======== USART =======
+void USART_Send(uint8_t* cmd){
+	uint8_t* ptr = cmd;
+	int size = 0;
+	
+	while(*cmd++)
+		size++;
+	
+	//while( HAL_UART_Transmit(&huart3, ptr, size, 0x1000) != HAL_OK);
+	HAL_UART_Transmit(&huart3, ptr, size, 0x1000);
+	
+	if(verbose){
+		USB_Print("Cmd: ");
+		USB_Print(ptr);
+	}
+}
+
+void USART_Send2Byte(uint8_t* fb){
+	//while( HAL_UART_Transmit(&huart3, fb, sizeof(int32_t), 0x1000) != HAL_OK);
+	HAL_UART_Transmit(&huart3, fb, 2*sizeof(int8_t), 0x1000);
+	USART_Send("\r\n");
+}
+
+void USART_Send4Byte(uint8_t* fb){
+	//while( HAL_UART_Transmit(&huart3, fb, sizeof(int32_t), 0x1000) != HAL_OK);
+	HAL_UART_Transmit(&huart3, fb, sizeof(int32_t), 0x1000);
+	USART_Send("\r\n");
+}
+
+/* --------------- Inetrrupts ------------------------------------------*/
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 	if(GPIO_Pin == GPIO_PIN_13){
 		intDRDY = true;
 	}
 	if(GPIO_Pin == PW_KEY_Pin){
-		HAL_GPIO_WritePin(PW_ENA_GPIO_Port, PW_ENA_Pin, GPIO_PIN_RESET);
+		if(HAL_GPIO_ReadPin(PW_KEY_GPIO_Port, PW_KEY_Pin) == GPIO_PIN_SET)
+			timerPowerDown = HAL_GetTick();
+		if(HAL_GPIO_ReadPin(PW_KEY_GPIO_Port, PW_KEY_Pin) == GPIO_PIN_RESET){
+			if( HAL_GetTick() - timerPowerDown > 1000)
+				HAL_GPIO_WritePin(PW_ENA_GPIO_Port, PW_ENA_Pin, GPIO_PIN_RESET);
+		}	
 	}
-	
+		
 }
 
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
+	if(huart == &huart3){
+		// If you use esp8266.c uncomment this
+		//addRingBuffer(ansESP);
+		//HAL_UART_Receive_IT(&huart3, &ansESP, 1);	
+	}
+}
+
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart){
+		
+}
 /* USER CODE END 4 */
 
 /**
